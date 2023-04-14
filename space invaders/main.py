@@ -1,6 +1,11 @@
 import pygame
 import pygame_menu
+import csv
+import tkinter as tk
+from tkinter import ttk
+from datetime import datetime
 from random import randint, choice
+from os import listdir
 from time import time, strftime, gmtime
 
 pygame.init()
@@ -45,9 +50,10 @@ pygame.font.init()
 font = pygame.font.SysFont("Pixeleum 48", 32)
 # main window options
 SCREEN = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-pygame.display.set_caption("Space invaders")
+pygame.display.set_caption("Space invaders", )
 # images
-ICON = pygame.image.load('icon.png')
+icon = "icon.png"
+ICON = pygame.image.load(icon)
 BG_IMAGE = pygame.image.load("bg.png")
 pygame.display.set_icon(ICON)
 # groups definition
@@ -79,9 +85,17 @@ class Spaceship(pygame.sprite.Sprite):
         self.cooldown = 500
         self.ful_health = 100
         self.remaining_health = self.ful_health
+        self.shots_made = 0
+        self.shots_reached = 0
 
     def reset(self, x, y):
         self.__init__(x, y)
+
+    def get_accuracy(self) -> float:
+        try:
+            return round(self.shots_reached / self.shots_made, 2)
+        except ZeroDivisionError:
+            return 0.00
 
     def update(self) -> int:
         key = pygame.key.get_pressed()
@@ -103,6 +117,7 @@ class Spaceship(pygame.sprite.Sprite):
         if key[pygame.K_SPACE] and time_now - self.last_shot > self.cooldown:
             bullet = Bullet(self.rect.centerx, self.rect.top)
             bullet_group.add(bullet)
+            self.shots_made += 1
             self.last_shot = time_now
 
         self.mask = pygame.mask.from_surface(self.image)
@@ -133,6 +148,7 @@ class Bullet(pygame.sprite.Sprite):
         if self.rect.bottom < WINDOW_HEIGHT - BG_IMAGE.get_height():
             self.kill()
         enemy_shot = pygame.sprite.spritecollide(self, alien_group, False)
+        player.shots_reached += 1
         if enemy_shot:
             self.kill()
             enemy_shot[0].health -= 20
@@ -225,6 +241,59 @@ class Explosion(pygame.sprite.Sprite):
             self.counter += 1
 
 
+def statistics_page() -> None:
+    """Opens tkinter window with game statistics for player"""
+
+    def check_keys(event: tk.Event):
+        """Checking if users tries to input or paste text into text fields"""
+        if event.char.isalpha() or (event.state & 4 and event.keysym == "v"):
+            return "break"
+
+    # creating and setting main window of tkinter
+    root = tk.Tk()
+    root.geometry(f'{WINDOW_WIDTH + 300}x{WINDOW_HEIGHT}')
+    root.resizable(False, False)
+    root.title("Game Statistics")
+    root.iconbitmap(icon)
+    # making scrollbar for text label
+    text = tk.Text(root, height=50, width=WINDOW_WIDTH)
+    text.grid(row=0, column=0, sticky=tk.EW)
+    scrollbar = ttk.Scrollbar(root, orient='vertical', command=text.yview)
+    scrollbar.grid(row=0, column=1, sticky=tk.NS)
+    text.yscrollcommand = scrollbar.set
+    # binding not allowing input and pasting into text fields
+    text.bind("<Key>", check_keys)
+    # adding text
+    with open("game_statistics.csv", "r", encoding="windows-1251") as file:
+        reader = csv.reader(file, delimiter=';')
+        for index, row in enumerate(reader, 1):
+            row_format = "{:^16} | {:^6} | {:^16} | {:^5} | {:^12} | {:^6} | {:^8} | {:^26}\n".format(
+                row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
+            text.insert(float(index), row_format)
+    root.mainloop()
+
+
+def save_statistics(player_name: str, result: str, remaining_health: int, score: int,
+                    time_played: str, shots_made: int, accuracy: float):
+    """Saving game statistics after every game of the player into csv file"""
+    filename = "game_statistics.csv"
+    fields = ["name", "result", "remaining_health", "score", "time_played", "shots", "accuracy", "date"]
+    row = {"name": player_name, "result": result, "remaining_health": remaining_health, "score": score,
+           "time_played": time_played, "shots": shots_made, "accuracy": accuracy,
+           "date": datetime.now().strftime("%Y-%m-%d %H:%M")}
+    if filename in listdir():  # file exists and user adds new game statistics row
+        with open("game_statistics.csv", 'a', newline='', encoding='windows-1251') as file:
+            writer = csv.DictWriter(file, delimiter=';', fieldnames=fields)
+            writer.writerow(row)
+            file.close()
+    else:  # file does not already exist for statistics (first initialization)
+        with open("game_statistics.csv", 'w', newline='', encoding='windows-1251') as file:
+            writer = csv.DictWriter(file, delimiter=';', fieldnames=fields)
+            writer.writeheader()
+            writer.writerow(row)
+            file.close()
+
+
 def quit_handler() -> None:
     """End of the program handler for main loop"""
     for event in pygame.event.get():
@@ -278,28 +347,32 @@ def alien_shooting(group: pygame.sprite.Group) -> None:
         last_alien_shot = time_now
 
 
-def score_handling() -> None:
+def score_handling() -> int:
     """Handling with changing player`s score after destroying an enemy"""
     global last_alien_group_length
     if len(alien_group) < last_alien_group_length:
         last_alien_group_length = len(alien_group)
-    score_number = font.render(f"{100 - last_alien_group_length * 2}/100", True, BLUE)
+    score = 100 - last_alien_group_length * 2
+    score_number = font.render(f"{score}/100", True, BLUE)
     SCREEN.blit(score_number, SCORE_NUMBER_POS)
+    return score
 
 
-def timer_handling() -> None:
+def timer_handling() -> str:
     """Working timer"""
     global START_TIME
     time_now = time() - START_TIME
-    timer = font.render(strftime("%M:%S", gmtime(time_now)), True, BLUE)
+    time_played = strftime("%M:%S", gmtime(time_now))
+    timer = font.render(time_played, True, BLUE)
     SCREEN.blit(timer, TIMER_POS)
+    return time_played
 
 
 # player class initialization
 player = Spaceship(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50)
 
 
-def main() -> None:
+def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
     """main class handling all events"""
     global START_TIME, countdown, gameover, end_countdown
     # resetting gameover variable just in case
@@ -345,6 +418,13 @@ def main() -> None:
                 score_handling()
             else:
                 if end_handler():
+                    save_statistics(player_name.get_value(),
+                                    "WIN" if gameover == 1 else "LOSE",
+                                    player.remaining_health if player.remaining_health > 0 else 0,
+                                    score_handling(),
+                                    timer_handling(),
+                                    player.shots_made,
+                                    player.get_accuracy())
                     break
         if countdown > 0:
             get_ready()
@@ -370,9 +450,9 @@ def menu() -> None:
     my_theme.title_bar_style = pygame_menu.widgets.MENUBAR_STYLE_NONE
     # initializing start menu with buttons
     my_menu = pygame_menu.Menu('', WINDOW_WIDTH, WINDOW_HEIGHT, theme=my_theme)
-    # for future development:
-    # my_menu.add.text_input('Name:', default="noname", maxchar=16)
-    my_menu.add.button('Play', main)
+    name_box = my_menu.add.text_input('Name:', default="noname", maxchar=16)
+    my_menu.add.button('Play', main, name_box)
+    my_menu.add.button('Statistics', statistics_page)
     my_menu.add.button('Quit', pygame_menu.events.EXIT)
     my_menu.mainloop(SCREEN)
 
