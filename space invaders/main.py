@@ -1,12 +1,8 @@
 import pygame
 import pygame_menu
-import csv
-import tkinter as tk
-from tkinter import ttk
-from datetime import datetime
 from random import randint, choice
-from os import listdir
 from time import time, strftime, gmtime
+from statistics import statistics_page, save_statistics
 
 pygame.init()
 # gameover variable meaning the reason of gameover or resuming the game (0 - play, 1 - win, -1 - lose)
@@ -62,6 +58,7 @@ bullet_group = pygame.sprite.Group()
 alien_group = pygame.sprite.Group()
 alien_bullet_group = pygame.sprite.Group()
 explosion_group = pygame.sprite.Group()
+spaceship_fire_group = pygame.sprite.Group()
 # text rendering before positioning
 health_word = font.render("Health:", False, GREEN)
 score_word = font.render("Score:", False, BLUE)
@@ -134,6 +131,40 @@ class Spaceship(pygame.sprite.Sprite):
         return alive
 
 
+class SpaceshipFire(pygame.sprite.Sprite):
+    """Player`s fire when moving"""
+
+    @classmethod
+    def load_images(cls) -> list:
+        images = []
+        for i in range(1, 5):
+            image = pygame.image.load(f"fire_{i}.png")
+            images.append(image)
+        return images
+
+    def __init__(self, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.images = SpaceshipFire.load_images()
+        self.index = 0
+        self.image = self.images[self.index]
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+
+    def reset(self, x, y):
+        self.__init__(x, y)
+
+    def update(self) -> None:
+        self.image = self.images[self.index]
+        self.rect.x = player.rect.x + 13
+        self.rect.y = player.rect.bottom
+        self.index += 1
+        if self.index == 4:
+            self.index = 0
+        if player.remaining_health <= 0:
+            self.kill()
+
+
 class Bullet(pygame.sprite.Sprite):
     """Player`s bullet class"""
 
@@ -143,7 +174,7 @@ class Bullet(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.center = [x, y]
 
-    def update(self):
+    def update(self) -> None:
         self.rect.y -= 5
         if self.rect.bottom < WINDOW_HEIGHT - BG_IMAGE.get_height():
             self.kill()
@@ -156,6 +187,8 @@ class Bullet(pygame.sprite.Sprite):
             explosion = Explosion(self.rect.centerx, self.rect.centery, 1)
             explosion_group.add(explosion)
             if health_remaining == 0:
+                explosion = Explosion(self.rect.centerx, self.rect.centery, 2)
+                explosion_group.add(explosion)
                 enemy_shot[0].kill()
 
 
@@ -163,7 +196,7 @@ class Alien(pygame.sprite.Sprite):
     """Alien (player`s enemy) class"""
 
     @classmethod
-    def health_creator(cls, alien_type: int):
+    def health_creator(cls, alien_type: int) -> int:
         return 60 if alien_type == 1 else 40 if alien_type == 3 else 20
 
     def __init__(self, x: int, y: int):
@@ -177,7 +210,7 @@ class Alien(pygame.sprite.Sprite):
         self.move_direction = 1
         self.move_counter = 0
 
-    def update(self):
+    def update(self) -> None:
         self.rect.x += self.move_direction
         self.move_counter += 1
         if abs(self.move_counter) > 50:
@@ -189,7 +222,7 @@ class AlienBullet(pygame.sprite.Sprite):
     """Aliens`s bullet class"""
 
     @classmethod
-    def get_speed(cls, alien_type: int):
+    def get_speed(cls, alien_type: int) -> int:
         return 6 if alien_type == 2 else 2 if alien_type == 1 else 3
 
     def __init__(self, x: int, y: int, alien_type: int):
@@ -199,7 +232,7 @@ class AlienBullet(pygame.sprite.Sprite):
         self.rect.center = [x, y]
         self.speed = AlienBullet.get_speed(alien_type)
 
-    def update(self):
+    def update(self) -> None:
         self.rect.y += self.speed
         if self.rect.top > WINDOW_HEIGHT:
             self.kill()
@@ -219,7 +252,7 @@ class Explosion(pygame.sprite.Sprite):
     """Explosion for aliens and ship class"""
 
     @classmethod
-    def get_image(cls, explosion_type: int):
+    def get_image(cls, explosion_type: int) -> pygame.SurfaceType:
         if explosion_type == 1:
             return pygame.image.load("explosion.png")
         elif explosion_type == 2:
@@ -233,65 +266,12 @@ class Explosion(pygame.sprite.Sprite):
         self.rect.center = [x, y]
         self.counter = 0
 
-    def update(self):
+    def update(self) -> None:
         speed = 8
         if self.counter >= speed:
             self.kill()
         else:
             self.counter += 1
-
-
-def statistics_page() -> None:
-    """Opens tkinter window with game statistics for player"""
-
-    def check_keys(event: tk.Event):
-        """Checking if users tries to input or paste text into text fields"""
-        if event.char.isalpha() or (event.state & 4 and event.keysym == "v"):
-            return "break"
-
-    # creating and setting main window of tkinter
-    root = tk.Tk()
-    root.geometry(f'{WINDOW_WIDTH + 300}x{WINDOW_HEIGHT}')
-    root.resizable(False, False)
-    root.title("Game Statistics")
-    root.iconbitmap(icon)
-    # making scrollbar for text label
-    text = tk.Text(root, height=50, width=WINDOW_WIDTH)
-    text.grid(row=0, column=0, sticky=tk.EW)
-    scrollbar = ttk.Scrollbar(root, orient='vertical', command=text.yview)
-    scrollbar.grid(row=0, column=1, sticky=tk.NS)
-    text.yscrollcommand = scrollbar.set
-    # binding not allowing input and pasting into text fields
-    text.bind("<Key>", check_keys)
-    # adding text
-    with open("game_statistics.csv", "r", encoding="windows-1251") as file:
-        reader = csv.reader(file, delimiter=';')
-        for index, row in enumerate(reader, 1):
-            row_format = "{:^16} | {:^6} | {:^16} | {:^5} | {:^12} | {:^6} | {:^8} | {:^26}\n".format(
-                row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
-            text.insert(float(index), row_format)
-    root.mainloop()
-
-
-def save_statistics(player_name: str, result: str, remaining_health: int, score: int,
-                    time_played: str, shots_made: int, accuracy: float):
-    """Saving game statistics after every game of the player into csv file"""
-    filename = "game_statistics.csv"
-    fields = ["name", "result", "remaining_health", "score", "time_played", "shots", "accuracy", "date"]
-    row = {"name": player_name, "result": result, "remaining_health": remaining_health, "score": score,
-           "time_played": time_played, "shots": shots_made, "accuracy": accuracy,
-           "date": datetime.now().strftime("%Y-%m-%d %H:%M")}
-    if filename in listdir():  # file exists and user adds new game statistics row
-        with open("game_statistics.csv", 'a', newline='', encoding='windows-1251') as file:
-            writer = csv.DictWriter(file, delimiter=';', fieldnames=fields)
-            writer.writerow(row)
-            file.close()
-    else:  # file does not already exist for statistics (first initialization)
-        with open("game_statistics.csv", 'w', newline='', encoding='windows-1251') as file:
-            writer = csv.DictWriter(file, delimiter=';', fieldnames=fields)
-            writer.writeheader()
-            writer.writerow(row)
-            file.close()
 
 
 def quit_handler() -> None:
@@ -370,6 +350,8 @@ def timer_handling() -> str:
 
 # player class initialization
 player = Spaceship(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50)
+# player`s fire from the bottom of the ship
+spaceship_fire = SpaceshipFire(player.rect.x + 13, player.rect.bottom)
 
 
 def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
@@ -385,11 +367,14 @@ def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
     alien_group.empty()
     explosion_group.empty()
     bullet_group.empty()
+    spaceship_fire_group.empty()
     # alien positioning on screen
     create_aliens()
     # resetting player to default options
     player.reset(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50)
+    spaceship_fire.reset(player.rect.x + 13, player.rect.bottom)
     spaceship_group.add(player)
+    spaceship_fire_group.add(spaceship_fire)
     while True:
         # setting FPS for game
         CLOCK.tick(FPS)
@@ -409,6 +394,7 @@ def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
                 # handing with player movement and shooting on WASD and SPACE buttons
                 gameover = player.update()
                 # updating sprites except for explosion
+                spaceship_fire_group.update()
                 bullet_group.update()
                 alien_group.update()
                 alien_bullet_group.update()
@@ -432,6 +418,7 @@ def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
         explosion_group.update()
         # drawing objects on screen
         spaceship_group.draw(SCREEN)
+        spaceship_fire_group.draw(SCREEN)
         bullet_group.draw(SCREEN)
         alien_group.draw(SCREEN)
         alien_bullet_group.draw(SCREEN)
