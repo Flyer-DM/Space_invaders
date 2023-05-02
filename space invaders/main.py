@@ -21,6 +21,8 @@ START_TIME = time()
 # alien cooldown
 ALIEN_COOLDOWN = 1000
 last_alien_shot = pygame.time.get_ticks()
+# asteroids cooldown
+last_asteroid_spawn = pygame.time.get_ticks()
 # explosion cooldown in milliseconds
 EXPLOSION_COOLDOWN = 500
 # alien group length that mean player`s score
@@ -59,6 +61,8 @@ alien_group = pygame.sprite.Group()
 alien_bullet_group = pygame.sprite.Group()
 explosion_group = pygame.sprite.Group()
 spaceship_fire_group = pygame.sprite.Group()
+gift_group = pygame.sprite.Group()
+asteroid_group = pygame.sprite.Group()
 # text rendering before positioning
 health_word = font.render("Health:", False, GREEN)
 score_word = font.render("Score:", False, BLUE)
@@ -80,6 +84,8 @@ class Spaceship(pygame.sprite.Sprite):
         self.rect.center = [x, y]
         self.speed = 3
         self.cooldown = 500
+        self.increase_cooldown = 3000
+        self.increase_cooldown_start = None
         self.ful_health = 100
         self.remaining_health = self.ful_health
         self.shots_made = 0
@@ -111,6 +117,12 @@ class Spaceship(pygame.sprite.Sprite):
 
         # player shooting
         time_now = pygame.time.get_ticks()
+
+        if self.increase_cooldown_start is not None:
+            if time_now - self.increase_cooldown_start > self.increase_cooldown:
+                self.cooldown = 500
+                self.increase_cooldown_start = None
+
         if key[pygame.K_SPACE] and time_now - self.last_shot > self.cooldown:
             bullet = Bullet(self.rect.centerx, self.rect.top)
             bullet_group.add(bullet)
@@ -189,7 +201,35 @@ class Bullet(pygame.sprite.Sprite):
             if health_remaining == 0:
                 explosion = Explosion(self.rect.centerx, self.rect.centery, 2)
                 explosion_group.add(explosion)
+                if randint(1, 10) == 1:
+                    gift = Gift(enemy_shot[0].rect.centerx, enemy_shot[0].rect.bottom)
+                    gift_group.add(gift)
                 enemy_shot[0].kill()
+
+
+class Gift(pygame.sprite.Sprite):
+    """Gift class randomly dropping from Aliens"""
+
+    def __init__(self, x: int, y: int):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = pygame.image.load("gift.png")
+        self.rect = self.image.get_rect()
+        self.rect.center = [x, y]
+        self.type = randint(1, 2)
+
+    def update(self) -> None:
+        self.rect.y += 3
+        if self.rect.bottom < WINDOW_HEIGHT - BG_IMAGE.get_height():
+            self.kill()
+        player_reached = pygame.sprite.spritecollide(self, spaceship_group, False)
+
+        if player_reached:
+            self.kill()
+            if self.type == 1 and player.remaining_health <= 90:
+                player.remaining_health += 10
+            else:
+                player.cooldown = 250
+                player.increase_cooldown_start = pygame.time.get_ticks()
 
 
 class Alien(pygame.sprite.Sprite):
@@ -227,7 +267,7 @@ class AlienBullet(pygame.sprite.Sprite):
 
     def __init__(self, x: int, y: int, alien_type: int):
         pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.image.load("bullet.png")
+        self.image = pygame.image.load("alien_bullet.png")
         self.rect = self.image.get_rect()
         self.rect.center = [x, y]
         self.speed = AlienBullet.get_speed(alien_type)
@@ -272,6 +312,38 @@ class Explosion(pygame.sprite.Sprite):
             self.kill()
         else:
             self.counter += 1
+
+
+class Asteroid(pygame.sprite.Sprite):
+
+    @classmethod
+    def get_image(cls, explosion_type: int) -> pygame.SurfaceType:
+        if explosion_type == 1:
+            return pygame.transform.scale(pygame.image.load("asteroid.png"), (50, 30))
+        elif explosion_type == 2:
+            return pygame.transform.scale(pygame.image.load("asteroid.png"), (40, 20))
+        return pygame.transform.scale(pygame.image.load("asteroid.png"), (20, 10))
+
+    @classmethod
+    def get_speed(cls, explosion_type: int) -> int:
+        if explosion_type == 1:
+            return 5
+        elif explosion_type == 2:
+            return 3
+        return 1
+
+    def __init__(self, x: int, y: int, type: int):
+        pygame.sprite.Sprite.__init__(self)
+        self.type = type
+        self.image = Asteroid.get_image(type)
+        self.speed = Asteroid.get_speed(type)
+        self.rect = self.image.get_rect()
+        self.rect.center = [x, y]
+
+    def update(self) -> None:
+        self.rect.y += self.speed
+        if self.rect.top > WINDOW_HEIGHT:
+            self.kill()
 
 
 def quit_handler() -> None:
@@ -327,6 +399,16 @@ def alien_shooting(group: pygame.sprite.Group) -> None:
         last_alien_shot = time_now
 
 
+def asteroids() -> None:
+    global last_asteroid_spawn
+    time_now = pygame.time.get_ticks()
+    if time_now - last_asteroid_spawn > EXPLOSION_COOLDOWN:
+        position_x = randint(20, WINDOW_WIDTH - 20)
+        asteroid = Asteroid(position_x, 0, randint(1, 3))
+        asteroid_group.add(asteroid)
+        last_asteroid_spawn = time_now
+
+
 def score_handling() -> int:
     """Handling with changing player`s score after destroying an enemy"""
     global last_alien_group_length
@@ -368,6 +450,8 @@ def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
     explosion_group.empty()
     bullet_group.empty()
     spaceship_fire_group.empty()
+    gift_group.empty()
+    asteroid_group.empty()
     # alien positioning on screen
     create_aliens()
     # resetting player to default options
@@ -391,13 +475,17 @@ def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
             if not gameover:
                 # create random alien bullets
                 alien_shooting(alien_group)
+                # spawning asteroids in the background
+                asteroids()
                 # handing with player movement and shooting on WASD and SPACE buttons
                 gameover = player.update()
                 # updating sprites except for explosion
+                asteroid_group.update()
                 spaceship_fire_group.update()
                 bullet_group.update()
                 alien_group.update()
                 alien_bullet_group.update()
+                gift_group.update()
                 # timer handling
                 timer_handling()
                 # score updating
@@ -417,12 +505,14 @@ def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
         # updating explosion
         explosion_group.update()
         # drawing objects on screen
+        asteroid_group.draw(SCREEN)
         spaceship_group.draw(SCREEN)
         spaceship_fire_group.draw(SCREEN)
         bullet_group.draw(SCREEN)
         alien_group.draw(SCREEN)
         alien_bullet_group.draw(SCREEN)
         explosion_group.draw(SCREEN)
+        gift_group.draw(SCREEN)
         # handling the end of the game
         quit_handler()
         # updating screen after positioning all the objects every frap
