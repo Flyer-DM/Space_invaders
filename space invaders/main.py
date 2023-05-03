@@ -6,6 +6,7 @@ from statistics import statistics_page, save_statistics
 from abstract import AbstractObject
 
 pygame.init()
+pygame.mixer.init()
 # gameover variable meaning the reason of gameover or resuming the game (0 - play, 1 - win, -1 - lose)
 gameover = 0
 # window options
@@ -74,6 +75,21 @@ timer_word = font.render("Time:", False, BLUE)
 get_ready_text = font.render("Get ready!", False, WHITE)
 lose_text = font.render("YOU LOST!", False, WHITE)
 win_text = font.render("YOU WON!", False, WHITE)
+# sound effects
+alien_hit_fx = pygame.mixer.Sound('alien_hit.mp3')
+alien_hit_fx.set_volume(0.25)
+spaceship_hit_fx = pygame.mixer.Sound('spaceship_hit.mp3')
+spaceship_hit_fx.set_volume(0.25)
+alien_laser_fx = pygame.mixer.Sound('alien_laser.mp3')
+alien_laser_fx.set_volume(0.25)
+spaceship_laser_fx = pygame.mixer.Sound('spaceship_laser.mp3')
+spaceship_laser_fx.set_volume(0.25)
+spaceship_explosion_fx = pygame.mixer.Sound('spaceship_explosion.mp3')
+win_fx = pygame.mixer.Sound('win.mp3')
+win_fx.set_volume(0.5)
+# bg music playing continuesly
+pygame.mixer.music.load('bg_music.mp3')
+pygame.mixer.music.play(-1)
 
 
 class Spaceship(AbstractObject):
@@ -115,7 +131,7 @@ class Spaceship(AbstractObject):
 
         # player shooting
         time_now = pygame.time.get_ticks()
-
+        # increasing firing speed for 3 secs after getting a gift
         if self.increase_cooldown_start is not None:
             if time_now - self.increase_cooldown_start > self.increase_cooldown:
                 self.cooldown = 500
@@ -123,6 +139,7 @@ class Spaceship(AbstractObject):
 
         if key[pygame.K_SPACE] and time_now - self.last_shot > self.cooldown:
             bullet = Bullet(self.rect.centerx, self.rect.top)
+            spaceship_laser_fx.play()
             bullet_group.add(bullet)
             self.shots_made += 1
             self.last_shot = time_now
@@ -135,6 +152,7 @@ class Spaceship(AbstractObject):
             pygame.draw.rect(SCREEN, GREEN, (H_S_T_POS_X, 15, self.remaining_health, 15))
         else:
             explosion = Explosion(self.rect.centerx, self.rect.centery, 3)
+            spaceship_explosion_fx.play()
             explosion_group.add(explosion)
             self.kill()
             alive = -1
@@ -186,6 +204,7 @@ class Bullet(AbstractObject):
         player.shots_reached += 1
         if enemy_shot:
             self.kill()
+            alien_hit_fx.play()
             enemy_shot[0].health -= 20
             health_remaining = enemy_shot[0].health
             explosion = Explosion(self.rect.centerx, self.rect.centery, 1)
@@ -260,6 +279,7 @@ class AlienBullet(AbstractObject):
         if self.rect.top > WINDOW_HEIGHT:
             self.kill()
         if pygame.sprite.spritecollide(self, spaceship_group, False, pygame.sprite.collide_mask):
+            spaceship_hit_fx.play()
             player.remaining_health -= 10 if self.speed == 6 else 50 if self.speed == 2 else 20
             self.kill()
             explosion = Explosion(self.rect.centerx, self.rect.centery, 2)
@@ -359,6 +379,7 @@ def alien_shooting(group: pygame.sprite.Group) -> None:
     if time_now - last_alien_shot > ALIEN_COOLDOWN:
         attacking = choice(group.sprites())
         bullet = AlienBullet(attacking.rect.centerx, attacking.rect.bottom, attacking.type)
+        alien_laser_fx.play()
         alien_bullet_group.add(bullet)
         last_alien_shot = time_now
 
@@ -398,6 +419,7 @@ def timer_handling() -> str:
 def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
     """main class handling all events"""
     global START_TIME, countdown, gameover, end_countdown
+    pygame.mixer.music.set_volume(0.15)
     # resetting gameover variable just in case
     gameover = 0
     # restarting timer and countdown
@@ -427,6 +449,7 @@ def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
         if countdown == 0:
             if len(alien_group) == 0:
                 gameover = 1
+                win_fx.play()
             # gameover not equals to 0
             if not gameover:
                 # create random alien bullets
@@ -457,6 +480,7 @@ def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
                                     timer_handling(),
                                     player.shots_made,
                                     player.get_accuracy())
+                    pygame.mixer.music.set_volume(0.05)
                     break
         if countdown > 0:
             get_ready()
@@ -473,6 +497,7 @@ def main(player_name: pygame_menu.widgets.widget.textinput.TextInput) -> None:
 
 def menu() -> None:
     """start menu handling function"""
+    pygame.mixer.music.set_volume(0.05)
     # initializing my theme for future menu (changing default options for default theme)
     my_theme = pygame_menu.themes.THEME_DARK.copy()
     my_theme.widget_font = pygame_menu.font.FONT_MUNRO
